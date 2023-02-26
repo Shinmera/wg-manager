@@ -220,9 +220,10 @@ exec sbcl \
       (add-peer-to-network peer))))
 
 (defun start-wireguard (&key (device *device*) (port *server-public-port*) (internal-ip *server-internal-ip*) (private-key-file *server-private-key-file*))
-  (status "Starting wireguard device ~a" device)
+  (status "Starting wireguard device ~a ~a" device internal-ip)
   (run NIL "ip" "link" "add" "dev" device "type" "wireguard")
-  (run NIL "ip" "addr" "add" (format NIL "~a1/24" internal-ip) "dev" device)
+  (run NIL "ip" "-4" "addr" "add" (format NIL "~a/24" internal-ip) "dev" device)
+  (run NIL "ip" "link" "set" "mtu" "1420" "up" "dev" device)
   (run NIL "wg" "set" device "listen-port" port "private-key" private-key-file)
   (run NIL "iptables" "-A" "FORWARD" "-i" device "-j" "ACCEPT")
   (run NIL "iptables" "-A" "FORWARD" "-o" device "-j" "ACCEPT")
@@ -233,7 +234,7 @@ exec sbcl \
   (run NIL "iptables" "-D" "FORWARD" "-i" device "-j" "ACCEPT")
   (run NIL "iptables" "-D" "FORWARD" "-o" device "-j" "ACCEPT")
   (run NIL "iptables" "-t" "nat" "-D" "POSTROUTING" "-o" "eth0" "-j" "MASQUERADE")
-  (run NIL "ip" "addr" "delete" (format NIL "~a1/24" internal-ip) "dev" device)
+  (run NIL "ip" "-4" "addr" "delete" (format NIL "~a/24" internal-ip) "dev" device)
   (run NIL "ip" "link" "delete" "dev" device "type" "wireguard"))
 
 (defun start ()
@@ -258,7 +259,7 @@ exec sbcl \
 (defun generate-config (peer &key private-key)
   (let ((peer (ensure-peer peer)))
     (format NIL "[Interface]
-Address = ~a/32
+Address = ~a/24
 PrivateKey = ~a
 
 [Peer]
