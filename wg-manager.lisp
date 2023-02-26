@@ -153,25 +153,25 @@ exec sbcl \
 
 (defun generate-next-ipv4 ()
   (loop for i from 1 below 254
-        for ip = (format NIL "~a~d" *subnet* ip)
+        for ip = (format NIL "~a~d" *subnet* i)
         do (when (and (string/= ip *server-internal-ip*)
-                      (null (postmodern:query (:select 'ipv4 :from 'peers :whene (:= 'ipv4 ip)))))
+                      (null (postmodern:query (:select 'ipv4 :from 'peers :where (:= 'ipv4 ip)))))
              (return ip))))
 
 (defun add-peer-to-network (peer &key (device *device*))
   (let* ((peer (ensure-peer peer))
          (ip (format NIL "~a/32" (getf peer :ipv4))))
-    (status "Adding peer ~a" (getf peer :name))
+    (status "Adding peer ~a ~a" (getf peer :ipv4) (getf peer :name))
     (run NIL "wg" "set" device "peer" (getf peer :public-key) "allowed-ips" ip)
-    (run NIL "ip" "-4" "route" "add" ip "dev" device)
+    ;(run NIL "ip" "-4" "route" "add" ip "dev" device)
     peer))
 
 (defun remove-peer-from-network (peer &key (device *device*))
   (let* ((peer (ensure-peer peer))
          (ip (format NIL "~a/32" (getf peer :ipv4))))
-    (status "Removing peer ~a" (getf peer :name))
+    (status "Removing peer ~a ~a" (getf peer :ipv4) (getf peer :name))
     (run NIL "wg" "set" device "peer" (getf peer :public-key) "remove")
-    (run NIL "ip" "-4" "route" "delete" ip "dev" device)
+    ;(run NIL "ip" "-4" "route" "delete" ip "dev" device)
     peer))
 
 (defun add-peer (name &key public-key private-key ipv4 note (device *device*))
@@ -257,7 +257,7 @@ PrivateKey = ~a
 [Peer]
 PublicKey = ~a
 Endpoint = ~a:~a
-AllowedIPs = ~a.0/24"
+AllowedIPs = ~a0/24"
             (getf peer :ipv4)
             (or private-key (getf peer :private-key) (error "Private key required."))
             *server-public-key*
@@ -277,15 +277,16 @@ AllowedIPs = ~a.0/24"
          (name (getf peer :name))
          (zip (make-instance 'zippy:zip-file)))
     (flet ((add-file (content format &rest args)
-             (let ((file-name (apply #'format NIL format args)))
+             (let ((file-name (apply #'format NIL format args))
+                   (content (if (stringp content) (babel:string-to-octets content) content)))
                (vector-push-extend (make-instance 'zippy:zip-entry :zip-file zip :file-name file-name :content content)
                                    (zippy:entries zip)))))
       (add-file (getf peer :public-key) "~a.pub" name)
       (add-file (getf peer :private-key) "~a.key" name)
-      (add-file (generate-config peer) "~a.conf" name)
+      (add-file (generate-config peer) "wg0.conf")
       (uiop:with-temporary-file (:pathname qr)
         (add-file (generate-qr peer :path qr) "QR.png")
-        (zippy:encode-file zip (merge-pathnames file name) :password password)))))
+        (zippy:compress-zip zip (merge-pathnames file name) :password password)))))
 
 (defun main ()
   (read-config)
