@@ -152,9 +152,11 @@ exec sbcl \
      peer-ish)))
 
 (defun generate-next-ipv4 ()
-  (let ((id (1+ (loop for peer in (list-peers)
-                      maximize (parse-integer (getf peer :ipv4) :start (length *subnet*))))))
-    (format NIL "~a~d" *subnet* id)))
+  (loop for i from 1 below 254
+        for ip = (format NIL "~a~d" *subnet* ip)
+        do (when (and (string/= ip *server-internal-ip*)
+                      (null (postmodern:query (:select 'ipv4 :from 'peers :whene (:= 'ipv4 ip)))))
+             (return ip))))
 
 (defun add-peer-to-network (peer &key (device *device*))
   (let* ((peer (ensure-peer peer))
@@ -192,7 +194,7 @@ exec sbcl \
       (if device
           (add-peer-to-network peer :device device)
           (postmodern:query (:notify 'wireguard-peers)))
-      (list* peer :private-key private-key))))
+      (list* :private-key private-key peer))))
 
 (defun remove-peer (peer &key (device *device*))
   (connect)
@@ -234,6 +236,7 @@ exec sbcl \
     (unwind-protect
          (let ((current (diff-peer-network () (list-peers))))
            (postmodern:query (:listen 'wireguard-peers))
+           (status "Waiting for changes")
            (loop (cl-postgres:wait-for-notification postmodern:*database*)
                  (status "Waking up from PG notification")
                  (setf current (diff-peer-network current (list-peers)))))
@@ -262,6 +265,10 @@ AllowedIPs = ~a.0/24"
             *server-public-port*
             *subnet*)))
 
+(defun print-peer (peer &optional (stream *standard-output*))
+  (format stream "~15a ~32a ~45a~@[ ~a~]~%"
+          (getf peer :ipv4) (getf peer :name) (getf peer :public-key) (getf peer :note)))
+
 (defun generate-qr (peer &key private-key path)
   (cl-qrencode:encode-png (generate-config peer :private-key private-key) :fpath path))
 
@@ -277,7 +284,7 @@ AllowedIPs = ~a.0/24"
       (add-file (getf peer :private-key) "~a.key" name)
       (add-file (generate-config peer) "~a.conf" name)
       (uiop:with-temporary-file (:pathname qr)
-        (add-file (generate-qr peer :path qr) name)
+        (add-file (generate-qr peer :path qr) "QR.png")
         (zippy:encode-file zip (merge-pathnames file name) :password password)))))
 
 (defun main ()
@@ -289,9 +296,7 @@ AllowedIPs = ~a.0/24"
               ((string-equal command "stop")
                (error "Not implemented lol"))
               ((string-equal command "list")
-               (dolist (peer (list-peers))
-                 (format *standard-output* "~15a ~32a ~45a~@[ ~a~]~%"
-                         (getf peer :ipv4) (getf peer :name) (getf peer :public-key) (getf peer :note))))
+               (mapc #'print-peer (list-peers)))
               ((string-equal command "add")
                (let ((args ()) (package NIL) (package-pw NIL) (name (pop args)))
                  (unless name (error "PEER-NAME required"))
@@ -365,6 +370,9 @@ Then from $HOME/.config/wireguard/config
 Then from environment variables
 " self))
               (T (error "Unknown command ~s" command))))
+    (sb-sys:interactive-interrupt ()
+      (status "Exiting from interrupt")
+      (sb-ext:exit :code 0))
     (error (e)
       (status "Error: ~a" e)
       (sb-ext:exit :code 1))))
