@@ -1,0 +1,5 @@
+# About wg-manager
+This project is a simple WireGuard management service. It implements both a VPN server and client interface to manage peers and create configurations easily. The peer data is managed through a Postgres database.
+
+## How To
+Either build a binary with ``(asdf:make :wg-manager)`` or just directly call the script ``./wg-manager.lisp``.
