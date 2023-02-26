@@ -47,6 +47,7 @@ exec sbcl \
 (defvar *postgres-db* "wireguard")
 (defvar *server-public-key* NIL)
 (defvar *server-private-key-file* NIL)
+(defvar *server-public-key-file* NIL)
 (defvar *server-public-ip* NIL)
 (defvar *server-public-port* "51820")
 (defvar *server-internal-ip* NIL)
@@ -62,6 +63,14 @@ exec sbcl \
   (format *debug-io* "~&[WG] ~?~%" format args)
   (force-output *debug-io*))
 
+(defun run (input program &rest args)
+  (string-right-trim
+   '(#\Linefeed)
+   (with-output-to-string (stream)
+     (let ((error (make-string-output-stream)))
+       (when (/= 0 (sb-ext:process-exit-code (sb-ext:run-program program args :input input :output stream :error error :search T)))
+         (error "Failed to run ~a~{ ~a~}~%  ~a" program args (get-output-stream-string error)))))))
+
 (defun read-config-file (file)
   (flet ((process-var (var val)
            (cond ((string-equal var "WG_POSTGRES_HOST") (setf *postgres-host* val))
@@ -75,7 +84,7 @@ exec sbcl \
                  ((string-equal var "WG_INTERNAL_IP") (setf *server-internal-ip* val))
                  ((string-equal var "WG_SUBNET") (setf *subnet* val))
                  ((string-equal var "WG_DEVICE") (setf *device* val))
-                 ((string-equal var "WG_PUBLIC_KEY_FILE") (setf *server-public-key* (alexandria:read-file-into-string val))))))
+                 ((string-equal var "WG_PUBLIC_KEY_FILE") (setf *server-public-key-file* val)))))
     (with-open-file (stream file :if-does-not-exist NIL)
       (when stream
         (loop for line = (read-line stream NIL NIL)
@@ -93,8 +102,7 @@ exec sbcl \
     (maybe-set *postgres-pass* "WG_POSTGRES_PASS")
     (maybe-set *postgres-db* "WG_POSTGRES_DB")
     (maybe-set *server-public-key* "WG_PUBLIC_KEY")
-    (let ((var (envvar "WG_PUBLIC_KEY_FILE")))
-      (when var (setf *server-public-key* (alexandria:read-file-into-string (envvar "WG_PUBLIC_KEY_FILE")))))
+    (maybe-set *server-public-key-file* "WG_PUBLIC_KEY_FILE")
     (maybe-set *server-private-key-file* "WG_PRIVATE_KEY_FILE")
     (maybe-set *server-public-ip* "WG_PUBLIC_IP")
     (maybe-set *server-public-port* "WG_PUBLIC_PORT")
@@ -107,15 +115,17 @@ exec sbcl \
   (read-config-file (format NIL "~a/.config/wireguard/config" (envvar "HOME")))
   (read-envvars)
   (unless *server-internal-ip*
-    (setf *server-internal-ip* (format NIL "~a1" *subnet*))))
-
-(defun run (input program &rest args)
-  (string-right-trim
-   '(#\Linefeed)
-   (with-output-to-string (stream)
-     (let ((error (make-string-output-stream)))
-       (when (/= 0 (sb-ext:process-exit-code (sb-ext:run-program program args :input input :output stream :error error :search T)))
-         (error "Failed to run ~a~{ ~a~}~%  ~a" program args (get-output-stream-string error)))))))
+    (setf *server-internal-ip* (format NIL "~a1" *subnet*)))
+  (when *device*
+    (unless *server-public-key-file*
+      (setf *server-public-key-file* (format NIL "/etc/wireguard/~a.pub" *device*)))
+    (unless *server-private-key-file*
+      (setf *server-private-key-file* (format NIL "/etc/wireguard/~a.key" *device*))
+      (unless (probe-file *server-private-key-file*)
+        (alexandria:write-string-into-file (run NIL "wg" "genkey") *server-private-key-file*)
+        (alexandria:write-string-into-file (run *server-private-key-file* "wg" "pubkey") *server-public-key-file*)))
+    (unless *server-public-key*
+      (setf *server-public-key* (alexandria:read-file-into-string *server-public-key-file*)))))
 
 (defun connect ()
   (unless (and postmodern:*database* (postmodern:connected-p postmodern:*database*))
@@ -239,6 +249,7 @@ exec sbcl \
 
 (defun start ()
   (connect)
+  (init-database)
   (when *device*
     (start-wireguard)
     (unwind-protect
@@ -327,7 +338,7 @@ AllowedIPs = ~a0/24"
                (format *standard-output* "~@[WG_POSTGRES_USER=~a~%~]" *postgres-user*)
                (format *standard-output* "~@[WG_POSTGRES_PASS=~a~%~]" *postgres-pass*)
                (format *standard-output* "~@[WG_POSTGRES_DB=~a~%~]" *postgres-db*)
-               (format *standard-output* "~@[WG_SERVER_PUBLIC_KEY=~a~%~]" *server-public-key*)
+               (format *standard-output* "~@[WG_SERVER_PUBLIC_KEY_FILE=~a~%~]" *server-public-key-file*)
                (format *standard-output* "~@[WG_SERVER_PRIVATE_KEY_FILE=~a~%~]" *server-private-key-file*)
                (format *standard-output* "~@[WG_SERVER_PUBLIC_IP=~a~%~]" *server-public-ip*)
                (format *standard-output* "~@[WG_SERVER_PUBLIC_PORT=~a~%~]" *server-public-port*)
@@ -360,12 +371,13 @@ The following configuration variables exist:
   WG_POSTGRES_USER       --- The user to connect to postgres with [wireguard]
   WG_POSTGRES_PASS       --- The password of the postgres user
   WG_POSTGRES_DB         --- The postgres database to use [wireguard]
-  WG_PUBLIC_KEY          --- The public key of the wireguard server
   WG_PUBLIC_KEY_FILE     --- The public key file of the wireguard server
+                             [/etc/wireguard/$WG_DEVICE.pub]
   WG_PRIVATE_KEY_FILE    --- The private key file of the wireguard server
+                             [/etc/wireguard/$WG_DEVICE.key]
   WG_PUBLIC_IP           --- The public internet-facing IP of the wireguard server
   WG_PUBLIC_PORT         --- The public port of the wireguard server [51820]
-  WG_INTERNAL_IP         --- The internal IP of the wireguard server [SUBNET1]
+  WG_INTERNAL_IP         --- The internal IP of the wireguard server [$WG_SUBNET 1]
   WG_SUBNET              --- The subnet of the VPN [10.1.3.]
   WG_DEVICE              --- The wireguard device to manage
 
