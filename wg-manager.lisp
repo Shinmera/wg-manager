@@ -173,15 +173,12 @@ exec sbcl \
          (ip (format NIL "~a/32" (getf peer :ipv4))))
     (status "Adding peer ~a ~a" (getf peer :ipv4) (getf peer :name))
     (run NIL "wg" "set" device "peer" (getf peer :public-key) "allowed-ips" ip)
-    ;(run NIL "ip" "-4" "route" "add" ip "dev" device)
     peer))
 
 (defun remove-peer-from-network (peer &key (device *device*))
-  (let* ((peer (ensure-peer peer))
-         (ip (format NIL "~a/32" (getf peer :ipv4))))
+  (let* ((peer (ensure-peer peer)))
     (status "Removing peer ~a ~a" (getf peer :ipv4) (getf peer :name))
     (run NIL "wg" "set" device "peer" (getf peer :public-key) "remove")
-    ;(run NIL "ip" "-4" "route" "delete" ip "dev" device)
     peer))
 
 (defun add-peer (name &key public-key private-key ipv4 note (device *device*))
@@ -307,6 +304,19 @@ AllowedIPs = ~a0/24"
         (add-file (generate-qr peer :path qr) "QR.png")
         (zippy:compress-zip zip (merge-pathnames file name) :password password)))))
 
+(defun print-config (&optional (stream *standard-output*))
+  (format stream "~@[WG_POSTGRES_HOST=~a~%~]" *postgres-host*)
+  (format stream "~@[WG_POSTGRES_USER=~a~%~]" *postgres-user*)
+  (format stream "~@[WG_POSTGRES_PASS=~a~%~]" *postgres-pass*)
+  (format stream "~@[WG_POSTGRES_DB=~a~%~]" *postgres-db*)
+  (format stream "~@[WG_SERVER_PUBLIC_KEY_FILE=~a~%~]" *server-public-key-file*)
+  (format stream "~@[WG_SERVER_PRIVATE_KEY_FILE=~a~%~]" *server-private-key-file*)
+  (format stream "~@[WG_SERVER_PUBLIC_IP=~a~%~]" *server-public-ip*)
+  (format stream "~@[WG_SERVER_PUBLIC_PORT=~a~%~]" *server-public-port*)
+  (format stream "~@[WG_SERVER_INTERNAL_IP=~a~%~]" *server-internal-ip*)
+  (format stream "~@[WG_SUBNET=~a~%~]" *subnet*)
+  (format stream "~@[WG_DEVICE=~a~%~]" *device*))
+
 (defun main ()
   (read-config)
   (handler-case
@@ -333,18 +343,35 @@ AllowedIPs = ~a0/24"
                    (format *standard-output* "~{~a: ~a~%~}" peer))))
               ((string-equal command "remove")
                (remove-peer (or (first args) (error "PEER-NAME required"))))
+              ((string-equal command "install")
+               (let ((unit "wg-server") (*device* (or *device* "wg0")) (start T) (enable T))
+                 (loop for (key val) on args by #'cddr
+                       do (cond ((string-equal key "--device") (setf *device* val))
+                                ((string-equal key "--unit") (setf unit val))
+                                ((string-equal key "--start") (setf start (string-equal val "true")))
+                                ((string-equal key "--enable") (setf enable (string-equal val "true")))
+                                (T (error "Unknown key argument ~a" key))))
+                 (status "Installing ~a for ~a" unit *device*)
+                 (with-open-file (stream (format NIL "/etc/systemd/system/~a.service" unit) :direction :output)
+                   (format stream "[Unit]
+Description=WireGuard Server
+Requires=network.target
+After=network.target
+
+[Service]
+ExecStart=~a start
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+" self))
+                 (with-open-file (stream "/etc/wireguard/config" :direction :output :if-exists NIL)
+                   (when stream (print-config stream)))
+                 (when start (run NIL "systemctl" "start" unit))
+                 (when enable (run NIL "systemctl" "enable" unit))))
               ((string-equal command "config")
-               (format *standard-output* "~@[WG_POSTGRES_HOST=~a~%~]" *postgres-host*)
-               (format *standard-output* "~@[WG_POSTGRES_USER=~a~%~]" *postgres-user*)
-               (format *standard-output* "~@[WG_POSTGRES_PASS=~a~%~]" *postgres-pass*)
-               (format *standard-output* "~@[WG_POSTGRES_DB=~a~%~]" *postgres-db*)
-               (format *standard-output* "~@[WG_SERVER_PUBLIC_KEY_FILE=~a~%~]" *server-public-key-file*)
-               (format *standard-output* "~@[WG_SERVER_PRIVATE_KEY_FILE=~a~%~]" *server-private-key-file*)
-               (format *standard-output* "~@[WG_SERVER_PUBLIC_IP=~a~%~]" *server-public-ip*)
-               (format *standard-output* "~@[WG_SERVER_PUBLIC_PORT=~a~%~]" *server-public-port*)
-               (format *standard-output* "~@[WG_SERVER_INTERNAL_IP=~a~%~]" *server-internal-ip*)
-               (format *standard-output* "~@[WG_SUBNET=~a~%~]" *subnet*)
-               (format *standard-output* "~@[WG_DEVICE=~a~%~]" *device*))
+               (print-config *standard-output*))
               ((string-equal command "help")
                (format *error-output* "Usage: ~a [command] ...
 
@@ -354,16 +381,21 @@ Command can be:
   list   --- List known peers
   add    --- Add a new peer. Prints the peer info on completion.
     NAME                 --- The name of the peer
-      --public-key KEY   --- The public key of the peer. If not passed is auto-generated
-      --private-key KEY  --- The private key of the peer. If not passed is auto-generated
-      --ipv4 IP          --- The IP address of the peer. If not passed is auto-generated
-      --note NOTE        --- An optional note about the peer
-      --package FILE     --- If passed, output a config package to the given file
-      --password PASS    --- If passed, encrypt the package with the given password
+    --public-key KEY     --- The public key of the peer. If not passed is auto-generated
+    --private-key KEY    --- The private key of the peer. If not passed is auto-generated
+    --ipv4 IP            --- The IP address of the peer. If not passed is auto-generated
+    --note NOTE          --- An optional note about the peer
+    --package FILE       --- If passed, output a config package to the given file
+    --password PASS      --- If passed, encrypt the package with the given password
   remove --- Remove a peer
     NAME                 --- The name of the peer to remove
-  config --- Print the current configuration
-  help   --- Show this help
+  install --- Install a basic server setup with systemd
+    --device DEVICE      --- The name of the device to use [wg0]
+    --unit UNIT          --- The service unit name to use [wg-server]
+    --start BOOLEAN      --- Whether to start the service [true]
+    --enable BOOLEAN     --- Whether to enable the service [true]
+  config  --- Print the current configuration
+  help    --- Show this help
 
 The following configuration variables exist:
 

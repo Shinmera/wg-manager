@@ -2,4 +2,28 @@
 This project is a simple WireGuard management service. It implements both a VPN server and client interface to manage peers and create configurations easily. The peer data is managed through a Postgres database.
 
 ## How To
-Either build a binary with ``(asdf:make :wg-manager)`` or just directly call the script ``./wg-manager.lisp``.
+Either build a binary with ``sbcl --eval '(asdf:make :wg-manager)'`` or alias the script ``wg-manager.lisp`` to ``wg-manager``.
+
+Before you start, please read the help options thoroughly:
+
+::
+wg-manager help
+::
+
+From there, use the appropriate environment variables to configure and install wg-manager on your server machine (as root):
+
+::
+WG_POSTGRES_PASS=... wg-manager install
+::
+
+This will configure a Systemd service unit, and copy/create your configuration. The resulting configuration will be written to ``/etc/wireguard/config``. When successfully started, the service will create the public/private key pairs if they don't exist yet, and configure the database. It'll then listen to changes in the database so it can add new clients as you configure them.
+
+Configuring a new client can be done remotely, as long as the remote has access to the same Postgres server (as non-root):
+
+::
+WG_POSTGRES_PASS=... wg-manager add my-client --package my-client.zip
+::
+
+The ``--package`` argument is especially useful as it'll create a ``zip`` file with all needed key and configuration files, and even a QR-code image that you can scan to set a client up on the phone. The output and package will contain the new client's private key, so treat it with care.
+
+You can also remotely remove clients again with ``wg-manager remove`` or see all clients with ``wg-manager list``.
