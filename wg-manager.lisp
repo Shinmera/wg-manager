@@ -365,7 +365,7 @@ RestartSec=5s
 
 [Install]
 WantedBy=multi-user.target
-" self))
+" (truename self)))
                  (with-open-file (stream "/etc/wireguard/config" :direction :output :if-exists NIL)
                    (when stream (print-config stream)))
                  (when start (run NIL "systemctl" "start" unit))
