@@ -381,12 +381,17 @@ Command can be:
   list   --- List known peers
   add    --- Add a new peer. Prints the peer info on completion.
     NAME                 --- The name of the peer
-    --public-key KEY     --- The public key of the peer. If not passed is auto-generated
-    --private-key KEY    --- The private key of the peer. If not passed is auto-generated
-    --ipv4 IP            --- The IP address of the peer. If not passed is auto-generated
+    --public-key KEY     --- The public key of the peer. If not passed
+                             is auto-generated
+    --private-key KEY    --- The private key of the peer. If not
+                             passed is auto-generated
+    --ipv4 IP            --- The IP address of the peer. If not passed
+                             is auto-generated
     --note NOTE          --- An optional note about the peer
-    --package FILE       --- If passed, output a config package to the given file
-    --password PASS      --- If passed, encrypt the package with the given password
+    --package FILE       --- If passed, output a config package to the
+                             given file
+    --password PASS      --- If passed, encrypt the package with the
+                             given password
   remove --- Remove a peer
     NAME                 --- The name of the peer to remove
   install --- Install a basic server setup with systemd
@@ -399,24 +404,30 @@ Command can be:
 
 The following configuration variables exist:
 
-  WG_POSTGRES_HOST       --- The hostname of the postgres server [127.0.0.1]
-  WG_POSTGRES_USER       --- The user to connect to postgres with [wireguard]
+  WG_POSTGRES_HOST       --- The hostname of the postgres server
+                             [127.0.0.1]
+  WG_POSTGRES_USER       --- The user to connect to postgres with
+                             [wireguard]
   WG_POSTGRES_PASS       --- The password of the postgres user
   WG_POSTGRES_DB         --- The postgres database to use [wireguard]
-  WG_PUBLIC_KEY_FILE     --- The public key file of the wireguard server
-                             [/etc/wireguard/$WG_DEVICE.pub]
-  WG_PRIVATE_KEY_FILE    --- The private key file of the wireguard server
-                             [/etc/wireguard/$WG_DEVICE.key]
-  WG_PUBLIC_IP           --- The public internet-facing IP of the wireguard server
-  WG_PUBLIC_PORT         --- The public port of the wireguard server [51820]
-  WG_INTERNAL_IP         --- The internal IP of the wireguard server [$WG_SUBNET 1]
+  WG_PUBLIC_KEY_FILE     --- The public key file of the wireguard
+                             server [/etc/wireguard/$WG_DEVICE.pub]
+  WG_PRIVATE_KEY_FILE    --- The private key file of the wireguard
+                             server [/etc/wireguard/$WG_DEVICE.key]
+  WG_PUBLIC_IP           --- The public internet-facing IP of the
+                             wireguard server
+  WG_PUBLIC_PORT         --- The public port of the wireguard server
+                             [51820]
+  WG_INTERNAL_IP         --- The internal IP of the wireguard server
+                             [$WG_SUBNET 1]
   WG_SUBNET              --- The subnet of the VPN [10.1.3.]
   WG_DEVICE              --- The wireguard device to manage
 
-If WG_DEVICE is set, it is assumed that this is run on the wireguard server itself
-and IP configuration is adapted accordingly. Otherwise, it is assumed that this is
-a remote server and merely the database is updated. If the server is running, it
-should notice the change and update the IP configuration automatically.
+If WG_DEVICE is set, it is assumed that this is run on the wireguard
+server itself and IP configuration is adapted accordingly. Otherwise,
+it is assumed that this is a remote server and merely the database is
+updated. If the server is running, it should notice the change and
+update the IP configuration automatically.
 
 The variables are first read from a file at /etc/wireguard/config
 Then from $HOME/.config/wireguard/config
