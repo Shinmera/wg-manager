@@ -142,7 +142,12 @@ exec sbcl \
                                      ((name :type (varchar 64) :primary-key t)
                                       (public-key :type (varchar 64) :unique t)
                                       (ipv4 :type (varchar 15) :unique t)
-                                      (note :type text))))))
+                                      (note :type text))))
+    (postmodern:query (:insert-into 'peers :set
+                                    'name (run NIL "hostname")
+                                    'public-key *server-public-key*
+                                    'ipv4 *server-internal-ip*
+                                    'note "WireGuard"))))
 
 (defun list-peers ()
   (connect)
