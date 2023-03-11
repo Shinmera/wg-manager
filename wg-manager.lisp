@@ -86,7 +86,8 @@ exec sbcl \
                  ((string-equal var "WG_SUBNET") (setf *subnet* val))
                  ((string-equal var "WG_DEVICE") (setf *device* val))
                  ((string-equal var "WG_PUBLIC_KEY_FILE") (setf *server-public-key-file* val))
-                 ((string-equal var "WG_HOOK") (push val *hooks*)))))
+                 ((string-equal var "WG_HOOK") (push val *hooks*))
+                 (T (setf (uiop:getenv var) val)))))
     (with-open-file (stream file :if-does-not-exist NIL)
       (when stream
         (loop for line = (read-line stream NIL NIL)
