@@ -52,6 +52,7 @@ exec sbcl \
 (defvar *server-public-port* "51820")
 (defvar *server-internal-ip* NIL)
 (defvar *subnet* "10.1.3.")
+(defvar *hooks* NIL)
 (defvar *device* NIL)
 
 (defun envvar (name)
@@ -84,7 +85,8 @@ exec sbcl \
                  ((string-equal var "WG_INTERNAL_IP") (setf *server-internal-ip* val))
                  ((string-equal var "WG_SUBNET") (setf *subnet* val))
                  ((string-equal var "WG_DEVICE") (setf *device* val))
-                 ((string-equal var "WG_PUBLIC_KEY_FILE") (setf *server-public-key-file* val)))))
+                 ((string-equal var "WG_PUBLIC_KEY_FILE") (setf *server-public-key-file* val))
+                 ((string-equal var "WG_HOOK") (push val *hooks*)))))
     (with-open-file (stream file :if-does-not-exist NIL)
       (when stream
         (loop for line = (read-line stream NIL NIL)
@@ -108,7 +110,9 @@ exec sbcl \
     (maybe-set *server-public-port* "WG_PUBLIC_PORT")
     (maybe-set *server-internal-ip* "WG_INTERNAL_IP")
     (maybe-set *subnet* "WG_SUBNET")
-    (maybe-set *device* "WG_DEVICE")))
+    (maybe-set *device* "WG_DEVICE")
+    (let ((var (envvar "WG_HOOK")))
+      (when var (push var *hooks*)))))
 
 (defun read-config ()
   (read-config-file "/etc/wireguard/config")
@@ -309,6 +313,11 @@ AllowedIPs = ~a0/24"
         (add-file (generate-qr peer :path qr) "QR.png")
         (zippy:compress-zip zip (merge-pathnames file name) :password password)))))
 
+(defun run-hooks (change peer)
+  (dolist (hook *hooks*)
+    (sb-ext:run-program hook (list change (getf peer :ipv4) (getf peer :name) (getf peer :public-key) (getf peer :note))
+                        :output *standard-output* :error *error-output* :search T)))
+
 (defun print-config (&optional (stream *standard-output*))
   (format stream "~@[WG_POSTGRES_HOST=~a~%~]" *postgres-host*)
   (format stream "~@[WG_POSTGRES_USER=~a~%~]" *postgres-user*)
@@ -427,6 +436,13 @@ The following configuration variables exist:
                              [$WG_SUBNET 1]
   WG_SUBNET              --- The subnet of the VPN [10.1.3.]
   WG_DEVICE              --- The wireguard device to manage
+  WG_HOOK                --- Adds the given program to a list of
+                             hooks that will be run after changing
+                             an entry. The program will receive the
+                             following arguments:
+    CHANGE IPV4 NAME PUBLIC-KEY NOTE
+                             Wherein CHANGE is one of: 
+                               add remove edit
 
 If WG_DEVICE is set, it is assumed that this is run on the wireguard
 server itself and IP configuration is adapted accordingly. Otherwise,
