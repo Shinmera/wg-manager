@@ -211,6 +211,7 @@ exec sbcl \
       (if device
           (add-peer-to-network peer :device device)
           (postmodern:query (:notify 'wireguard-peers)))
+      (run-hooks "add" peer)
       (list* :private-key private-key peer))))
 
 (defun remove-peer (peer &key (device *device*))
@@ -220,7 +221,9 @@ exec sbcl \
       (postmodern:query (:delete-from 'peers :where (:= 'name (getf peer :name))))
       (if device
           (remove-peer-from-network peer :device device)
-          (postmodern:query (:notify 'wireguard-peers))))))
+          (postmodern:query (:notify 'wireguard-peers)))
+      (run-hooks "remove" peer)
+      peer)))
 
 (defun plist= (a b)
   (and (= (length a) (length b))
@@ -444,6 +447,9 @@ The following configuration variables exist:
     CHANGE IPV4 NAME PUBLIC-KEY NOTE
                              Wherein CHANGE is one of: 
                                add remove edit
+
+Any configuration variables not part of this set will be re-exported
+as environment variables so that other hooks may make use of it.
 
 If WG_DEVICE is set, it is assumed that this is run on the wireguard
 server itself and IP configuration is adapted accordingly. Otherwise,
