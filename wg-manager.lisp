@@ -286,7 +286,8 @@ PrivateKey = ~a
 [Peer]
 PublicKey = ~a
 Endpoint = ~a:~a
-AllowedIPs = ~a0/24"
+AllowedIPs = ~a0/24
+PersistentKeepalive = 25"
             (getf peer :ipv4)
             (or private-key (getf peer :private-key) (error "Private key required."))
             *server-public-key*
