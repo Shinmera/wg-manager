@@ -232,7 +232,7 @@ exec sbcl \
            (old-peer (copy-list peer)))
       (flet ((update (karg field value)
                (postmodern:query (:update 'peers :set field value :where (:= 'name (getf peer :name))))
-               (setf (getf account karg) value)))
+               (setf (getf peer karg) value)))
         (when public-key (update :public-key 'public-key public-key))
         (when note (update :note 'note note))
         (when ipv4 (update :ipv4 'ipv4 ipv4))
