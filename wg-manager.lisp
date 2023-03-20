@@ -225,6 +225,25 @@ exec sbcl \
       (run-hooks "remove" peer)
       peer)))
 
+(defun edit-peer (peer &key name public-key ipv4 note (device *device*))
+  (connect)
+  (postmodern:with-transaction ()
+    (let* ((peer (ensure-peer peer))
+           (old-peer (copy-list peer)))
+      (flet ((update (karg field value)
+               (postmodern:query (:update 'peers :set field value :where (:= 'name (getf peer :name))))
+               (setf (getf account karg) value)))
+        (when public-key (update :public-key 'public-key public-key))
+        (when note (update :note 'note note))
+        (when ipv4 (update :ipv4 'ipv4 ipv4))
+        (when name (update :name 'name name)))
+      (when (or public-key ipv4)
+        (cond (device
+               (remove-peer-from-network old-peer :device device)
+               (add-peer-to-network peer :device device))
+              (T
+               (postmodern:query (:notify 'wireguard-peers))))))))
+
 (defun plist= (a b)
   (and (= (length a) (length b))
        (loop for (k av) on a by #'cddr
@@ -362,6 +381,17 @@ PersistentKeepalive = 25"
                    (format *standard-output* "~{~a: ~a~%~}" peer))))
               ((string-equal command "remove")
                (remove-peer (or (first args) (error "PEER-NAME required"))))
+              ((string-equal command "edit")
+               (let ((edit-args ()) (package NIL) (package-pw NIL) (name (pop args)))
+                 (unless name (error "PEER-NAME required"))
+                 (loop for (key val) on args by #'cddr
+                       do (cond ((string-equal key "--public-key") (setf (getf edit-args :public-key) val))
+                                ((string-equal key "--ipv4") (setf (getf edit-args :ipv4) val))
+                                ((string-equal key "--note") (setf (getf edit-args :note) val))
+                                ((string-equal key "--name") (setf (getf edit-args :name) val))
+                                (T (error "Unknown key argument ~a" key))))
+                 (let ((peer (apply #'edit-peer name edit-args)))
+                   (format *standard-output* "~{~a: ~a~%~}" peer))))
               ((string-equal command "install")
                (let ((unit "wg-server") (*device* (or *device* "wg0")) (start T) (enable T))
                  (loop for (key val) on args by #'cddr
@@ -413,6 +443,12 @@ Command can be:
                              given password
   remove --- Remove a peer
     NAME                 --- The name of the peer to remove
+  edit   --- Edit a peer's information
+    NAME
+    --public-key KEY     --- The new public key of the peer
+    --ipv4 IP            --- The new IP address of the peer
+    --note NOTE          --- An optional note about the peer
+    --name NEW-NAME      --- The new name of the peer
   install --- Install a basic server setup with systemd
     --device DEVICE      --- The name of the device to use [wg0]
     --unit UNIT          --- The service unit name to use [wg-server]
