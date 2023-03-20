@@ -314,6 +314,49 @@ PersistentKeepalive = 25"
             *server-public-port*
             *subnet*)))
 
+(defun generate-readme (peer)
+  (format NIL "=== Installation Instructions ===
+This is a brief guide that should tell you how to get set up with
+WireGuard to connect to the VPN. If you have any issues, please
+contact the system administrator.
+
+This ZIP contains sensitive information that uniquely identifies you
+on the VPN. Do *NOT* share it with anyone else, and make sure the ZIP
+file and its contents cannot be easily read by other programs and
+services.
+
+Ideally after installation delete this ZIP file and its contents.
+Note that you can only connect one device with the certificate in this
+ZIP file. If you require more devices, please request additional
+certificates from your system administrator.
+
+=== Windows / MacOS ===
+1. Download and run the installer:
+   - Windows: https://www.wireguard.com/install/
+   - MacOS: https://apps.apple.com/us/app/wireguard/id1451685025
+2. Start WireGuard and click \"Import tunnels from file\"
+3. Select the wg0.conf file
+
+=== Linux ===
+1. Install the Wireguard Package:
+   - Ubuntu/Debian: sudo apt install wireguard
+   - Arch: sudo pacman -S wireguard-tools
+   - Fedora: sudo dnf install wireguard-tools
+2. sudo unzip this.zip -d /etc/wireguard/
+3. sudo systemctl start wg-quick@wg0
+
+To enable the connection automatically on boot:
+1. sudo systemctl enable wg-quick@wg0
+
+=== Smart Phones ===
+1. Install the WireGuard app:
+  - Android: https://play.google.com/store/apps/details?id=com.wireguard.android
+  - iOS: https://apps.apple.com/us/app/wireguard/id1441195209
+2. Open the app and add a new connection via QR code
+3. Open the QR.png on your PC
+4. Scan the QR code with your phone
+" *server-internal-ip*))
+
 (defun print-peer (peer &optional (stream *standard-output*))
   (format stream "~15a ~32a ~45a~@[ ~a~]~%"
           (getf peer :ipv4) (getf peer :name) (getf peer :public-key) (getf peer :note)))
@@ -333,6 +376,7 @@ PersistentKeepalive = 25"
       (add-file (getf peer :public-key) "~a.pub" name)
       (add-file (getf peer :private-key) "~a.key" name)
       (add-file (generate-config peer) "wg0.conf")
+      (add-file (generate-readme peer) "README.txt")
       (uiop:with-temporary-file (:pathname qr)
         (add-file (generate-qr peer :path qr) "QR.png")
         (zippy:compress-zip zip (merge-pathnames file name) :password password)))))
