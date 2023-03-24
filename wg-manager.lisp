@@ -253,10 +253,12 @@ exec sbcl \
 (defun diff-peer-network (old new)
   (dolist (peer old)
     (unless (find peer new :test #'plist=)
-      (remove-peer-from-network peer)))
+      (with-simple-restart (continue "Ignore the failure")
+        (remove-peer-from-network peer))))
   (dolist (peer new new)
     (unless (find peer old :test #'plist=)
-      (add-peer-to-network peer))))
+      (with-simple-restart (continue "Ignore the failure")
+        (add-peer-to-network peer)))))
 
 (defun start-wireguard (&key (device *device*) (port *server-public-port*) (internal-ip *server-internal-ip*) (private-key-file *server-private-key-file*))
   (status "Starting wireguard device ~a ~a" device internal-ip)
@@ -404,7 +406,10 @@ To enable the connection automatically on boot:
   (handler-case
       (destructuring-bind (self &optional (command "help") &rest args) sb-ext:*posix-argv*
         (cond ((string-equal command "start")
-               (start))
+               (handler-bind ((error (lambda (e)
+                                       (format *debug-io* "[ERROR] ~a" e)
+                                       (continue e))))
+                 (start)))
               ((string-equal command "stop")
                (error "Not implemented lol"))
               ((string-equal command "list")
