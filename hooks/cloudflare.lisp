@@ -2,7 +2,7 @@
 exec sbcl \
   --noinform \
   --disable-debugger \
-  --eval "(ql:quickload '(drakma alexandria com.inuoe.jzon) :silent T)" \
+  --eval "(asdf:load-system '(drakma alexandria com.inuoe.jzon) :verbose NIL)" \
   --load "$0" \
   --eval "(wg-manager.cloudflare::main)" \
   --quit \
