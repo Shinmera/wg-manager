@@ -194,20 +194,21 @@ exec sbcl \
 (defun add-peer (name &key public-key private-key ipv4 note (device *device*) overwrite)
   (connect)
   (setf name (string-downcase name))
-  (let ((existing (find-peer name)))
-    (cond ((null existing))
-          ((null overwrite)
-           (error "Peer with name ~s already exists!" name))
-          ((null ipv4)
-           (setf ipv4 (getf peer :ipv4)))))
-  (unless ipv4
-    (setf ipv4 (generate-next-ipv4)))
-  (unless public-key
-    (unless private-key
-      (setf private-key (run NIL "wg" "genkey")))
-    (with-input-from-string (stream private-key)
-      (setf public-key (run stream "wg" "pubkey"))))
   (postmodern:with-transaction ()
+    (let ((peer (find-peer name)))
+      (cond ((null peer))
+            ((null overwrite)
+             (error "Peer with name ~s already exists!" name))
+            ((null ipv4)
+             (setf ipv4 (getf peer :ipv4))))
+      (postmodern:query (:delete-from 'peers :where (:= 'name (getf peer :name)))))
+    (unless ipv4
+      (setf ipv4 (generate-next-ipv4)))
+    (unless public-key
+      (unless private-key
+        (setf private-key (run NIL "wg" "genkey")))
+      (with-input-from-string (stream private-key)
+        (setf public-key (run stream "wg" "pubkey"))))
     (postmodern:query (:insert-into 'peers :set
                                     'name name
                                     'public-key public-key
@@ -323,6 +324,7 @@ PersistentKeepalive = 25"
             *subnet*)))
 
 (defun generate-readme (peer)
+  (declare (ignorable peer))
   (format NIL "=== Installation Instructions ===
 This is a brief guide that should tell you how to get set up with
 WireGuard to connect to the VPN. If you have any issues, please
@@ -436,13 +438,13 @@ To enable the connection automatically on boot:
                (let ((add-args ()) (package NIL) (package-pw NIL) (name (pop args)))
                  (unless name (error "PEER-NAME required"))
                  (loop for (key val) on args by #'cddr
-                       do (cond ((argument-p "u" "-public" "-public-key") (setf (getf add-args :public-key) val))
-                                ((argument-p "x" "-private" "-private-key") (setf (getf add-args :private-key) val))
-                                ((argument-p "i" "-ip" "-ipv4") (setf (getf add-args :ipv4) val))
-                                ((argument-p "m" "-note") (setf (getf add-args :note) val))
-                                ((argument-p "o" "-overwrite") (setf (getf add-args :overwrite) (string-equal "true" val)))
-                                ((argument-p "P" "-package") (setf package val))
-                                ((argument-p "p" "-password") (setf package-pw val))
+                       do (cond ((argument-p key "u" "-public" "-public-key") (setf (getf add-args :public-key) val))
+                                ((argument-p key "x" "-private" "-private-key") (setf (getf add-args :private-key) val))
+                                ((argument-p key "i" "-ip" "-ipv4") (setf (getf add-args :ipv4) val))
+                                ((argument-p key "m" "-note") (setf (getf add-args :note) val))
+                                ((argument-p key "o" "-overwrite") (setf (getf add-args :overwrite) (string-equal "true" val)))
+                                ((argument-p key "P" "-package") (setf package val))
+                                ((argument-p key "p" "-password") (setf package-pw val))
                                 (T (error "Unknown key argument ~a" key))))
                  (let ((peer (apply #'add-peer name add-args)))
                    (when package (generate-user-package peer package :password package-pw))
@@ -450,23 +452,23 @@ To enable the connection automatically on boot:
               ((command-p command "remove" "rm")
                (remove-peer (or (first args) (error "PEER-NAME required"))))
               ((command-p command "edit" "ed")
-               (let ((edit-args ()) (package NIL) (package-pw NIL) (name (pop args)))
+               (let ((edit-args ()) (name (pop args)))
                  (unless name (error "PEER-NAME required"))
                  (loop for (key val) on args by #'cddr
-                       do (cond ((argument-p "u" "-public" "-public-key") (setf (getf edit-args :public-key) val))
-                                ((argument-p "i" "-ip" "-ipv4") (setf (getf edit-args :ipv4) val))
-                                ((argument-p "m" "-note") (setf (getf edit-args :note) val))
-                                ((argument-p "n" "-name") (setf (getf edit-args :name) val))
+                       do (cond ((argument-p key "u" "-public" "-public-key") (setf (getf edit-args :public-key) val))
+                                ((argument-p key "i" "-ip" "-ipv4") (setf (getf edit-args :ipv4) val))
+                                ((argument-p key "m" "-note") (setf (getf edit-args :note) val))
+                                ((argument-p key "n" "-name") (setf (getf edit-args :name) val))
                                 (T (error "Unknown key argument ~a" key))))
                  (let ((peer (apply #'edit-peer name edit-args)))
                    (format *standard-output* "~{~a: ~a~%~}" peer))))
               ((command-p command "install")
                (let ((unit "wg-server") (*device* (or *device* "wg0")) (start T) (enable T))
                  (loop for (key val) on args by #'cddr
-                       do (cond ((argument-p "d" "-device") (setf *device* val))
-                                ((argument-p "u" "-unit") (setf unit val))
-                                ((argument-p "s" "-start") (setf start (string-equal val "true")))
-                                ((argument-p "e" "-enable") (setf enable (string-equal val "true")))
+                       do (cond ((argument-p key "d" "-device") (setf *device* val))
+                                ((argument-p key "u" "-unit") (setf unit val))
+                                ((argument-p key "s" "-start") (setf start (string-equal val "true")))
+                                ((argument-p key "e" "-enable") (setf enable (string-equal val "true")))
                                 (T (error "Unknown key argument ~a" key))))
                  (status "Installing ~a for ~a" unit *device*)
                  (with-open-file (stream (format NIL "/etc/systemd/system/~a.service" unit) :direction :output)
