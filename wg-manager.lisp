@@ -191,9 +191,15 @@ exec sbcl \
     (run NIL "wg" "set" device "peer" (getf peer :public-key) "remove")
     peer))
 
-(defun add-peer (name &key public-key private-key ipv4 note (device *device*))
+(defun add-peer (name &key public-key private-key ipv4 note (device *device*) overwrite)
   (connect)
   (setf name (string-downcase name))
+  (let ((existing (find-peer name)))
+    (cond ((null existing))
+          ((null overwrite)
+           (error "Peer with name ~s already exists!" name))
+          ((null ipv4)
+           (setf ipv4 (getf peer :ipv4)))))
   (unless ipv4
     (setf ipv4 (generate-next-ipv4)))
   (unless public-key
@@ -357,7 +363,7 @@ To enable the connection automatically on boot:
 2. Open the app and add a new connection via QR code
 3. Open the QR.png on your PC
 4. Scan the QR code with your phone
-" *server-internal-ip*))
+"))
 
 (defun print-peer (peer &optional (stream *standard-output*))
   (format stream "~15a ~32a ~45a~@[ ~a~]~%"
@@ -402,53 +408,65 @@ To enable the connection automatically on boot:
   (format stream "~@[WG_SUBNET=~a~%~]" *subnet*)
   (format stream "~@[WG_DEVICE=~a~%~]" *device*))
 
+(defun command-p (thing &rest commands)
+  (member thing commands :test #'string-equal))
+
+(defun argument-p (thing &rest args)
+  (and (< 1 (length thing)) (char= #\- (char thing 0))
+       (member (subseq thing 1) args :test #'string=)))
+
 (defun main ()
   (read-config)
   (handler-case
       (destructuring-bind (self &optional (command "help") &rest args) sb-ext:*posix-argv*
-        (cond ((string-equal command "start")
+        (cond ((command-p command "start")
                (handler-bind ((error (lambda (e)
                                        (format *debug-io* "[ERROR] ~a" e)
                                        (continue e))))
                  (start)))
-              ((string-equal command "stop")
+              ((command-p command "stop")
                (error "Not implemented lol"))
-              ((string-equal command "list")
+              ((command-p command "list" "ls")
                (mapc #'print-peer (list-peers)))
-              ((string-equal command "add")
+              ((command-p command "show" "find")
+               (let ((name (pop args)))
+                 (unless name (error "PEER-NAME required"))
+                 (print-peer (ensure-peer name))))
+              ((command-p command "add")
                (let ((add-args ()) (package NIL) (package-pw NIL) (name (pop args)))
                  (unless name (error "PEER-NAME required"))
                  (loop for (key val) on args by #'cddr
-                       do (cond ((string-equal key "--public-key") (setf (getf add-args :public-key) val))
-                                ((string-equal key "--private-key") (setf (getf add-args :private-key) val))
-                                ((string-equal key "--ipv4") (setf (getf add-args :ipv4) val))
-                                ((string-equal key "--note") (setf (getf add-args :note) val))
-                                ((string-equal key "--package") (setf package val))
-                                ((string-equal key "--password") (setf package-pw val))
+                       do (cond ((argument-p "u" "-public" "-public-key") (setf (getf add-args :public-key) val))
+                                ((argument-p "x" "-private" "-private-key") (setf (getf add-args :private-key) val))
+                                ((argument-p "i" "-ip" "-ipv4") (setf (getf add-args :ipv4) val))
+                                ((argument-p "m" "-note") (setf (getf add-args :note) val))
+                                ((argument-p "o" "-overwrite") (setf (getf add-args :overwrite) (string-equal "true" val)))
+                                ((argument-p "P" "-package") (setf package val))
+                                ((argument-p "p" "-password") (setf package-pw val))
                                 (T (error "Unknown key argument ~a" key))))
                  (let ((peer (apply #'add-peer name add-args)))
                    (when package (generate-user-package peer package :password package-pw))
                    (format *standard-output* "~{~a: ~a~%~}" peer))))
-              ((string-equal command "remove")
+              ((command-p command "remove" "rm")
                (remove-peer (or (first args) (error "PEER-NAME required"))))
-              ((string-equal command "edit")
+              ((command-p command "edit" "ed")
                (let ((edit-args ()) (package NIL) (package-pw NIL) (name (pop args)))
                  (unless name (error "PEER-NAME required"))
                  (loop for (key val) on args by #'cddr
-                       do (cond ((string-equal key "--public-key") (setf (getf edit-args :public-key) val))
-                                ((string-equal key "--ipv4") (setf (getf edit-args :ipv4) val))
-                                ((string-equal key "--note") (setf (getf edit-args :note) val))
-                                ((string-equal key "--name") (setf (getf edit-args :name) val))
+                       do (cond ((argument-p "u" "-public" "-public-key") (setf (getf edit-args :public-key) val))
+                                ((argument-p "i" "-ip" "-ipv4") (setf (getf edit-args :ipv4) val))
+                                ((argument-p "m" "-note") (setf (getf edit-args :note) val))
+                                ((argument-p "n" "-name") (setf (getf edit-args :name) val))
                                 (T (error "Unknown key argument ~a" key))))
                  (let ((peer (apply #'edit-peer name edit-args)))
                    (format *standard-output* "~{~a: ~a~%~}" peer))))
-              ((string-equal command "install")
+              ((command-p command "install")
                (let ((unit "wg-server") (*device* (or *device* "wg0")) (start T) (enable T))
                  (loop for (key val) on args by #'cddr
-                       do (cond ((string-equal key "--device") (setf *device* val))
-                                ((string-equal key "--unit") (setf unit val))
-                                ((string-equal key "--start") (setf start (string-equal val "true")))
-                                ((string-equal key "--enable") (setf enable (string-equal val "true")))
+                       do (cond ((argument-p "d" "-device") (setf *device* val))
+                                ((argument-p "u" "-unit") (setf unit val))
+                                ((argument-p "s" "-start") (setf start (string-equal val "true")))
+                                ((argument-p "e" "-enable") (setf enable (string-equal val "true")))
                                 (T (error "Unknown key argument ~a" key))))
                  (status "Installing ~a for ~a" unit *device*)
                  (with-open-file (stream (format NIL "/etc/systemd/system/~a.service" unit) :direction :output)
@@ -469,17 +487,19 @@ WantedBy=multi-user.target
                    (when stream (print-config stream)))
                  (when start (run NIL "systemctl" "start" unit))
                  (when enable (run NIL "systemctl" "enable" unit))))
-              ((string-equal command "config")
+              ((command-p command "config")
                (print-config *standard-output*))
-              ((string-equal command "help")
+              ((command-p command "help" "-h" "--help")
                (format *error-output* "Usage: ~a [command] ...
 
 Command can be:
   start  --- Start the wireguard server
   stop   --- Stop the wireguard server
   list   --- List known peers
+  show   --- Show a specific peer
+    NAME                 --- The name of the peer to show
   add    --- Add a new peer. Prints the peer info on completion.
-    NAME                 --- The name of the peer
+    NAME                 --- The name of the peer to add
     --public-key KEY     --- The public key of the peer. If not passed
                              is auto-generated
     --private-key KEY    --- The private key of the peer. If not
@@ -491,6 +511,8 @@ Command can be:
                              given file
     --password PASS      --- If passed, encrypt the package with the
                              given password
+    --overwrite VAL      --- If true, will overwrite the peer if it
+                             exists already
   remove --- Remove a peer
     NAME                 --- The name of the peer to remove
   edit   --- Edit a peer's information
