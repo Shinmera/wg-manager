@@ -2,7 +2,7 @@
 exec sbcl \
   --noinform \
   --disable-debugger \
-  --eval "(ql:quickload '(postmodern cl-qrencode zippy) :silent T)" \
+  --eval "(ql:quickload '(postmodern cl-qrencode zippy drakma) :silent T)" \
   --load "$0" \
   --eval "(wg-manager::main)" \
   --quit \

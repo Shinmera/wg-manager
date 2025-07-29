@@ -5,4 +5,5 @@
   :entry-point "wg-manager::main"
   :depends-on (:postmodern
                :cl-qrencode
-               :zippy))
+               :zippy
+               :drakma))
