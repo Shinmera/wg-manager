@@ -61,8 +61,8 @@ exec sbcl \
       var)))
 
 (defun status (format &rest args)
-  (format *debug-io* "~&[WG] ~?~%" format args)
-  (force-output *debug-io*))
+  (format *error-output* "~&[WG] ~?~%" format args)
+  (force-output *error-output*))
 
 (defun run (input program &rest args)
   (string-right-trim
