@@ -2,7 +2,7 @@
 This project is a simple WireGuard management service. It implements both a VPN server and client interface to manage peers and create configurations easily. The peer data is managed through a Postgres database.
 
 ## How To
-Either build a binary with ``sbcl --eval '(asdf:make :wg-manager)'``, alias the script ``wg-manager.lisp`` to ``wg-manager``, or download a binary from the "releases"(https://github.com/Shinmera/wg-manager/releases/latest).
+Either build a binary with ``sbcl --eval '(asdf:make :wg-manager)'``, alias the script ``wg-manager.lisp`` to ``wg-manager``, or download a binary from the "releases"(https://shinmera.com/project/wg-manager/releases/latest).
 
 Before you start, please read the help options thoroughly:
 
